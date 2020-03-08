@@ -35,7 +35,6 @@ class Gigs::InquiriesController < Gigs::ApplicationController
     # - if .valid? is true, then .save will be for sure executed!
     # - same goes if .valid is false, that .save won't be performed either
     #  **** Florin ****
-    build_riders(@inquiry) if @inquiry.valid?
     if @inquiry.save
       setup_technical_rider(@inquiry, current_profile.technical_rider)
       setup_catering_rider(@inquiry, current_profile.catering_rider)
@@ -85,7 +84,8 @@ class Gigs::InquiriesController < Gigs::ApplicationController
     profile = current_profile
     if profile.billing_address.blank?
       profile.build_billing_address
-      profile.billing_address.name = "#{profile.main_user.first_name} #{profile.main_user.last_name}"
+      f_name = "#{profile.main_user.first_name} #{profile.main_user.last_name}"
+      profile.billing_address.name = f_name
     end
     profile
   end
@@ -97,13 +97,16 @@ class Gigs::InquiriesController < Gigs::ApplicationController
 
   def run_intercom_events(gig)
     unless current_profile.has_a_complete_billing_address?
-      GigTest::Intercom::Event::ApplicationSawIncompleteBillingDataWarning.emit(gig.id, current_profile.id)
+      GigTest::Intercom::Event::ApplicationSawIncompleteBillingDataWarning
+        .emit(gig.id, current_profile.id)
     end
     unless current_profile.epk_complete?
-      GigTest::Intercom::Event::ApplicationSawIncompleteEpkWarning.emit(gig.id, current_profile.id)
+      GigTest::Intercom::Event::ApplicationSawIncompleteEpkWarning
+        .emit(gig.id, current_profile.id)
     end
     if current_profile.complete_for_inquiry?
-      GigTest::Intercom::Event::ApplicationVisitedGigApplicationForm.emit(gig.id, current_profile.id)
+      GigTest::Intercom::Event::ApplicationVisitedGigApplicationForm
+        .emit(gig.id, current_profile.id)
     end
   end
 
@@ -113,7 +116,7 @@ class Gigs::InquiriesController < Gigs::ApplicationController
       artist: current_profile,
       user: current_profile.main_user,
       promoter: gig.promoter,
-      existing_gig_invite: current_profile.gig_invites.where(gig_id: params[:gig_id]).first
+      existing_gig_invite: current_profile.gig_invites.find_by(gig_id: params[:gig_id])
     }
   end
 
@@ -131,14 +134,10 @@ class Gigs::InquiriesController < Gigs::ApplicationController
     end
   end
 
-  def build_rider(rider, inquiry)
-    inquiry.build_technical_rider(user_id: current_user.id).save!
-    MediaItemWorker.perform_async(rider.id, inquiry.technical_rider.id)
-  end
-
   def after_save_steps
     Event::WatchlistArtistInquiry.emit(@inquiry.id)
-    GigTest::Intercom::Event::Simple.emit('gig-received-application', @gig.promoter_id)
+    GigTest::Intercom::Event::Simple
+      .emit('gig-received-application', @gig.promoter_id)
     IntercomCreateOrUpdateUserWorker.perform_async(@gig.promoter_id)
     id = existing_gig_invite.id
     Event::Read.emit(:gig_invite, id) if existing_gig_invite.present?
